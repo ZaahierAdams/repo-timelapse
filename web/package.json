@@ -1,0 +1,19 @@
+{
+  "name": "repo-timelapse",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p . && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "svgcanvas": "^2.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  },
+  "private": true,
+  "type": "module"
+}

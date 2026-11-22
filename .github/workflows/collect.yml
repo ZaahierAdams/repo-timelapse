@@ -1,0 +1,54 @@
+name: Collect repo stats
+
+# Nightly: replay every repo's git history, then upload the stats to Supabase.
+# Nothing is committed back to this (public) repo, and logs never print repo names.
+on:
+  schedule:
+    - cron: "17 22 * * *" # 00:17 in Cape Town
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC token proves to Supabase that this workflow is the sender
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect stats from all repos
+        env:
+          GH_TOKEN: ${{ secrets.STATS_GITHUB_TOKEN }}
+          TIMELAPSE_EXCLUDE: ${{ vars.TIMELAPSE_EXCLUDE }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Missing secret STATS_GITHUB_TOKEN (fine-grained token with read access to all your repos). See README."
+            exit 1
+          fi
+          # clones live in the runner's temp dir only; never cached (this repo is public)
+          python collector/collect.py --clones "$RUNNER_TEMP/clones" --fetch \
+            --owner "$GITHUB_REPOSITORY_OWNER" --out "$RUNNER_TEMP/stats.json"
+          echo "payload: $(wc -c < "$RUNNER_TEMP/stats.json") bytes"
+
+      - name: Upload to Supabase
+        env:
+          INGEST_URL: ${{ vars.INGEST_URL || 'https://kseznvlerqpdbabnxrja.supabase.co/functions/v1/repo-timelapse-ingest' }}
+        run: |
+          OIDC=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=repo-timelapse-ingest" | jq -r .value)
+          echo "::add-mask::$OIDC"
+          curl -sS --fail-with-body -X POST "$INGEST_URL" \
+            -H "Authorization: Bearer $OIDC" -H "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/stats.json"
+          echo
+          rm -rf "$RUNNER_TEMP/clones" "$RUNNER_TEMP/stats.json"
