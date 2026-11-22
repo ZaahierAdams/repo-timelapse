@@ -293,7 +293,7 @@ function start(ds: Dataset, user: User | null) {
       <div class="tbl-wrap"><table id="tbl"></table></div>
       <div class="notes">
         <b>Commits</b> are non-merge commits on any branch, dated by author time (${esc(u.tz)}).
-        <b>Lines of code</b> count lines in source files on the default branch (TypeScript, JavaScript, Python, Kotlin, Java, Swift, Dart, C#, SQL, HTML, CSS and more). Lockfiles, minified or generated files, build output, <code>node_modules</code>, hidden folders and scratch folders like <code>_to_delete</code> are excluded.
+        <b>Lines of code</b> count lines in source files on the default branch (TypeScript, JavaScript, Python, Kotlin, Java, Swift, Dart, C#, SQL, HTML, CSS and more). Lockfiles, minified or generated files, build output, <code>node_modules</code>, vendored libraries (jQuery, Bootstrap, D3… in <code>libs/</code> or <code>wwwroot/lib/</code>), hidden folders and scratch or backup folders like <code>_to_delete</code> are excluded.
         <b>Repo size</b> is the total size of all tracked files on the default branch, including assets.
         Each repo sends fresh stats on every push, via a GitHub Action that replays its full git history.
       </div>

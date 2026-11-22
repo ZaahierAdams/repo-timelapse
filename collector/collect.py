@@ -20,6 +20,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.request
@@ -49,26 +50,46 @@ EXCLUDED_DIRS = {
     "target", "bin", "obj", "Library", "Temp", "Logs", ".vercel", ".svelte-kit", ".turbo",
     "generated", "__generated__", ".cache", "public/build", "www", "platforms",
 }
-SCRATCH_DIRS = {"_to_delete", "to_delete", "tmp", "temp", "claude outputs", "_archive", "archive"}
+# Vendored front-end libraries: "libs/" anywhere; "lib/" only under a web-asset folder
+# (Flutter/Dart keep real code in a top-level lib/, so plain "lib" is never excluded on its own).
+VENDOR_DIRS = {"libs", "third_party", "thirdparty", "bower_components", "jspm_packages", "external",
+               "jimu.js", "arcgis_js_api"}
+WEB_ASSET_PARENTS = {"wwwroot", "static", "public", "assets", "js", "scripts", "content", "www"}
+# well-known libraries committed as files, matched as "<lib>.js", "<lib>-1.2.3.js", "<lib>.min.css"…
+VENDOR_FILE_RE = re.compile(
+    r"^(jquery(-ui)?|bootstrap|d3|moment(-with-locales|-timezone)?|echarts|lodash|underscore|fullcalendar|"
+    r"(jquery\.)?datatables|chart|popper|select2|leaflet|font-?awesome|angular|vue(\.global)?|"
+    r"react(-dom)?(\.development|\.production)|highcharts|three(\.module)?|pdf(\.worker)?|sweetalert2?|toastr|"
+    r"modernizr|normalize|animate|axios|knockout|backbone|handlebars|mustache|require|"
+    r"plotly|mapbox-gl|ol|openlayers|filesaver|xlsx(\.full)?|jszip|socket\.io)"
+    r"([.-][0-9][\w.-]*)?(\.(min|slim|bundle|esm|umd|full|all))*\.(js|css|mjs)$",
+    re.IGNORECASE,
+)
+SCRATCH_DIRS = {"_to_delete", "to_delete", "tmp", "temp", "claude outputs", "_archive", "archive", "backup", "backups"}
 EXCLUDED_FILES = {
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "bun.lock", "pubspec.lock",
     "Podfile.lock", "composer.lock", "Cargo.lock", "poetry.lock", "Gemfile.lock",
 }
 EXCLUDED_SUFFIXES = (
     ".min.js", ".min.css", ".map", ".g.dart", ".freezed.dart", ".pb.go", ".bundle.js",
-    ".chunk.js", "-lock.json",
+    ".chunk.js", "-lock.json", ".designer.cs", "modelsnapshot.cs",  # EF / WinForms generated
 )
 
 
 def language_of(path: str) -> str | None:
     parts = path.split("/")
     name = parts[-1]
-    if name in EXCLUDED_FILES or name.endswith(EXCLUDED_SUFFIXES):
+    lname = name.lower()
+    if name in EXCLUDED_FILES or lname.endswith(EXCLUDED_SUFFIXES) or VENDOR_FILE_RE.match(name):
         return None
+    prev = ""
     for p in parts[:-1]:
+        lp = p.lower()
         # vendored/build output, hidden folders (.tmp-assets, browser profiles…), scratch folders
-        if p in EXCLUDED_DIRS or p.startswith(".") or p.lower() in SCRATCH_DIRS:
+        if (p in EXCLUDED_DIRS or p.startswith(".") or lp in SCRATCH_DIRS or lp in VENDOR_DIRS
+                or (lp == "lib" and prev in WEB_ASSET_PARENTS)):
             return None
+        prev = lp
     dot = name.rfind(".")
     if dot <= 0:
         return None

@@ -23,7 +23,7 @@ There are **no personal access tokens and no secrets**. The ingest function acce
 
 - **`collector/collect.py`** builds a daily series per repo straight from git:
   - **Commits:** non-merge commits on any branch, dated by author time (Africa/Johannesburg).
-  - **Lines of code:** a running sum of `git log --numstat` along the default branch's first-parent history, counting source files only. Lockfiles, minified or generated files, build output, `node_modules`, hidden folders and scratch folders (`_to_delete`, `Claude outputs`, …) are excluded. At HEAD this matches an actual line count of the same files.
+  - **Lines of code:** a running sum of `git log --numstat` along the default branch's first-parent history, counting source files only. Lockfiles, minified or generated files (including EF `*.Designer.cs`), build output, `node_modules`, vendored libraries (`libs/`, `wwwroot/lib/`, `third_party/`, committed copies of jQuery, Bootstrap, D3, Moment, ECharts …), hidden folders and scratch/backup folders (`_to_delete`, `Claude outputs`, `backup`, …) are excluded. Flutter's top-level `lib/` is real code and is counted. At HEAD this matches an actual line count of the same files.
   - **Size:** total bytes of all tracked files (`git ls-tree -l`) at the end of each active day, assets included.
   - **Languages:** lines of code per language, snapshotted daily.
   - **Tags** become release markers on the chart.
