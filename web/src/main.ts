@@ -97,7 +97,7 @@ async function boot() {
     return renderError(res.error.message);
   }
   const payload = res.data as { data: Dataset } | null;
-  if (!payload?.data) return renderError("No stats yet. The nightly collector hasn't run.");
+  if (!payload?.data?.repos?.length) return renderError("No stats yet. Push to any repo to send its first stats.");
   // tidy the URL after the OAuth redirect
   if (location.search.includes("code=")) history.replaceState(null, "", location.pathname);
   start(payload.data, session.user);
@@ -295,7 +295,7 @@ function start(ds: Dataset, user: User | null) {
         <b>Commits</b> are non-merge commits on any branch, dated by author time (${esc(u.tz)}).
         <b>Lines of code</b> count lines in source files on the default branch (TypeScript, JavaScript, Python, Kotlin, Java, Swift, Dart, C#, SQL, HTML, CSS and more). Lockfiles, minified or generated files, build output, <code>node_modules</code>, hidden folders and scratch folders like <code>_to_delete</code> are excluded.
         <b>Repo size</b> is the total size of all tracked files on the default branch, including assets.
-        Data is collected nightly by a GitHub Action that replays each repo's full git history.
+        Each repo sends fresh stats on every push, via a GitHub Action that replays its full git history.
       </div>
     </details>
   </div>

@@ -1,0 +1,48 @@
+name: Repo Timelapse stats (reusable)
+
+# Called by a tiny workflow in each of my repos on every push. It reads only the
+# calling repo, using that repo's own built-in GITHUB_TOKEN, and uploads its stats
+# to Supabase with a GitHub OIDC token. No personal access tokens or secrets anywhere.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the calling repo (full history, all branches and tags)
+        uses: actions/checkout@v4
+        with:
+          path: target
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the collector
+        uses: actions/checkout@v4
+        with:
+          repository: ZaahierAdams/repo-timelapse
+          ref: main
+          path: _rt
+          persist-credentials: false
+
+      - name: Collect
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}" > "$RUNNER_TEMP/meta.json"
+          python3 _rt/collector/collect.py --single target --meta-json "$RUNNER_TEMP/meta.json" --out "$RUNNER_TEMP/stats.json"
+
+      - name: Upload to Supabase
+        run: |
+          OIDC=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=repo-timelapse-ingest" | jq -r .value)
+          echo "::add-mask::$OIDC"
+          curl -sS --fail-with-body -X POST "https://kseznvlerqpdbabnxrja.supabase.co/functions/v1/repo-timelapse-ingest" \
+            -H "Authorization: Bearer $OIDC" -H "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/stats.json"
+          echo

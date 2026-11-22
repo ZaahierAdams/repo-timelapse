@@ -87,20 +87,26 @@ def local_day(iso: str) -> str:
     return dt.datetime.fromisoformat(iso).astimezone(TZ).date().isoformat()
 
 
-def default_branch(repo: Path, hint: str | None) -> str | None:
-    if hint:
+def default_branch(repo: Path, hint: str | None) -> tuple[str, str] | None:
+    """Return (branch name, git ref) for the default branch, in a bare clone or a CI checkout."""
+    def ok(ref: str) -> bool:
         try:
-            git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{hint}")
-            return hint
+            git(repo, "rev-parse", "--verify", "--quiet", ref)
+            return True
         except subprocess.CalledProcessError:
-            pass
+            return False
+    if hint:
+        for ref in (f"refs/remotes/origin/{hint}", f"refs/heads/{hint}"):
+            if ok(ref):
+                return hint, ref
     try:
         ref = git(repo, "symbolic-ref", "HEAD").strip()
-        git(repo, "rev-parse", "--verify", "--quiet", ref)
-        return ref.removeprefix("refs/heads/")
+        if ok(ref):
+            return ref.removeprefix("refs/heads/"), ref
     except subprocess.CalledProcessError:
-        heads = git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
-        return heads[0] if heads else None
+        pass
+    heads = git(repo, "for-each-ref", "--format=%(refname)", "refs/heads").split()
+    return (heads[0].removeprefix("refs/heads/"), heads[0]) if heads else None
 
 
 def commits_per_day(repo: Path) -> dict[str, int]:
@@ -177,11 +183,12 @@ def tags(repo: Path) -> list[dict]:
 
 
 def collect_repo(repo: Path, meta: dict) -> dict | None:
-    branch = default_branch(repo, meta.get("default_branch"))
-    if not branch:
+    found = default_branch(repo, meta.get("default_branch"))
+    if not found:
         return None
+    branch, ref = found
     cpd = commits_per_day(repo)
-    snaps = snapshots(repo, branch)
+    snaps = snapshots(repo, ref)
     days = sorted(set(cpd) | set(snaps))
     if not days:
         return None
@@ -263,7 +270,9 @@ def sync_clone(clones: Path, owner: str, name: str, token: str) -> Path:
 # ---------------------------------------------------------------- main
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clones", required=True, type=Path)
+    ap.add_argument("--clones", type=Path, help="folder of bare clones named <repo>.git")
+    ap.add_argument("--single", type=Path, help="collect one checked-out repo (CI mode)")
+    ap.add_argument("--meta-json", type=Path, help="GitHub repo metadata for --single")
     ap.add_argument("--repos-json", type=Path, help="metadata list (as returned by GitHub)")
     ap.add_argument("--fetch", action="store_true", help="list + clone/fetch repos via GH_TOKEN")
     ap.add_argument("--owner", default=os.environ.get("GITHUB_REPOSITORY_OWNER", ""))
@@ -272,6 +281,21 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
+
+    if args.single:
+        meta = json.loads(args.meta_json.read_text()) if args.meta_json else {"name": args.single.name}
+        meta = {k: meta.get(k) for k in (
+            "name", "private", "language", "description", "created_at", "pushed_at", "archived", "default_branch")}
+        res = collect_repo(args.single, meta)
+        args.out.write_text(json.dumps({
+            "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "tz": str(TZ), "repo": res,
+        }, separators=(",", ":")))
+        print("collected" if res else "no history on the default branch", file=sys.stderr)
+        return 0
+
+    if not args.clones:
+        ap.error("--clones or --single is required")
     args.clones.mkdir(parents=True, exist_ok=True)
     excluded = {x.strip().lower() for x in args.exclude.split(",") if x.strip()}
 

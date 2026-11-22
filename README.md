@@ -9,12 +9,17 @@ This repo is public, but it only holds code. The stats, which include private re
 ## How it works
 
 ```
- nightly GitHub Action ──(OIDC token)──▶ Supabase edge function ──▶ repo_stats.dataset (private schema)
-   clones every repo,                      verifies the token came                     │
-   replays full git history                from this repo's collect.yml on main         │ public.repo_timelapse_get()
-                                                                                        ▼  (Google identity must be the owner)
-                                     GitHub Pages ◀── Vite app (canvas renderer) ◀── signed-in browser
+ push to any of my repos
+   └─ .github/workflows/repo-timelapse.yml  (3-line caller, no secrets)
+        └─ uses ZaahierAdams/repo-timelapse/.github/workflows/repo-stats.yml@main
+             ├─ checks out that repo's full history with its own built-in GITHUB_TOKEN
+             ├─ collector/collect.py --single  → commits / lines / size / languages per day
+             └─ POST + GitHub OIDC token ──▶ Supabase edge function ──▶ repo_stats.repos (private schema)
+                                                                              │ public.repo_timelapse_get()
+                                       GitHub Pages ◀── Vite app ◀── signed-in browser (owner's Google identity only)
 ```
+
+There are **no personal access tokens and no secrets**. The ingest function accepts a repo's stats only when GitHub signs a token saying they came from the reusable workflow above, on `main` of this repo, running in a repo owned by `ZaahierAdams` (owner id `58355846`). The repo's name and visibility come from that signed token, never from the request body.
 
 - **`collector/collect.py`** builds a daily series per repo straight from git:
   - **Commits:** non-merge commits on any branch, dated by author time (Africa/Johannesburg).
@@ -22,7 +27,7 @@ This repo is public, but it only holds code. The stats, which include private re
   - **Size:** total bytes of all tracked files (`git ls-tree -l`) at the end of each active day, assets included.
   - **Languages:** lines of code per language, snapshotted daily.
   - **Tags** become release markers on the chart.
-- **`supabase/`** contains the schema and RPCs (`migrations/`) and the ingest function (`functions/repo-timelapse-ingest`). Both are deployed to the Nest-app Supabase project. The data sits in its own `repo_stats` schema, which the Supabase API doesn't expose.
+- **`supabase/`** contains the schema and RPCs (`migrations/`) and the ingest function. Both are deployed to the Nest-app Supabase project. The data sits in its own `repo_stats` schema, which the Supabase API doesn't expose.
 - **`web/`** is a Vite + TypeScript app with a hand-written Canvas renderer, and is deployed to GitHub Pages by `deploy.yml`.
 
 ## Features
@@ -39,23 +44,9 @@ This repo is public, but it only holds code. The stats, which include private re
 - Click a repo to toggle it. Alt- or ⌘-click shows only that repo. The URL keeps the current view, so links are shareable.
 - Keyboard: <kbd>Space</kbd> play/pause, <kbd>←</kbd>/<kbd>→</kbd> step a day (hold <kbd>Shift</kbd> for a week), <kbd>Home</kbd> restart.
 
-## One-time setup
+## Adding a repo
 
-1. **Token for reading private repos.** Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new):
-   - Resource owner: `ZaahierAdams`
-   - Repository access: **All repositories**
-   - Permissions: **Contents: Read-only** (Metadata is read-only automatically)
-
-   Save it in this repo under *Settings → Secrets and variables → Actions → New repository secret* as **`STATS_GITHUB_TOKEN`**.
-2. **Pages.** Go to *Settings → Pages → Build and deployment → Source* and choose **GitHub Actions**.
-3. **Supabase redirect URL.** In Nest-app, go to *Authentication → URL Configuration → Redirect URLs* and add `https://zaahieradams.github.io/repo-timelapse/`.
-4. Run **Actions → Collect repo stats → Run workflow** once. After that it runs every night.
-
-Optional: set a repository variable named `TIMELAPSE_EXCLUDE` to a comma-separated list of repo names to skip.
-
-### Fork safety
-
-The collector never caches clones and never commits data back. The ingest function only accepts OIDC tokens issued to `collect.yml` on `main` of this repo, under owner id `58355846`. Secrets and OIDC tokens are never available to pull requests from forks.
+Copy [`templates/repo-timelapse.yml`](templates/repo-timelapse.yml) to `.github/workflows/repo-timelapse.yml` in the repo. The first push runs it. To remove a repo, delete that file and run `select public.repo_timelapse_delete_repo('<name>');` in Supabase.
 
 ## Local development
 
