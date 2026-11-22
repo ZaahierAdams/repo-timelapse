@@ -15,12 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out the calling repo (full history, all branches and tags)
-        uses: actions/checkout@v4
-        with:
-          path: target
-          fetch-depth: 0
-          persist-credentials: false
+      - name: Clone the calling repo (bare, full history, all branches and tags)
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          # plain git instead of actions/checkout: no working tree, no submodules (robust to broken gitlinks)
+          AUTH=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic $AUTH" clone --bare --quiet \
+            "https://github.com/${{ github.repository }}.git" target
 
       - name: Check out the collector
         uses: actions/checkout@v4
